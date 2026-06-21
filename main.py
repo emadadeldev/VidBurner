@@ -1,137 +1,83 @@
 import argparse
-import ffmpeg
 import os
+import subprocess
 import sys
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='FFmpeg subtitle and text burner'
-    )
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-v", "--video", required=True)
+    parser.add_argument("-sub", "--subtitle", required=True)
+    parser.add_argument("-o", "--output", default="output.mp4")
+
+    parser.add_argument("-t", "--text")
+
+    parser.add_argument("-font", "--fontfile",
+                        default=r"C:\Windows\Fonts\arial.ttf")
+
+    parser.add_argument("-fontsize", type=int, default=24)
+    parser.add_argument("-fontcolor", default="white")
+    parser.add_argument("-bgcolor")
+
+    parser.add_argument("-topleft", action="store_true")
+    parser.add_argument("-topright", action="store_true")
+    parser.add_argument("-bottomleft", action="store_true")
+    parser.add_argument("-bottomright", action="store_true")
+
+    parser.add_argument("-left", type=int, default=10)
+    parser.add_argument("-right", type=int, default=10)
+    parser.add_argument("-top", type=int, default=10)
+    parser.add_argument("-bottom", type=int, default=10)
 
     parser.add_argument(
-        '-v', '--video',
-        required=True,
-        help='Video file path'
-    )
-
-    parser.add_argument(
-        '-sub', '--subtitle',
-        required=True,
-        help='Subtitle file path'
-    )
-
-    parser.add_argument(
-        '-o', '--output',
-        default='output.mp4',
-        help='Output video path'
-    )
-
-    parser.add_argument(
-        '-t', '--text',
-        help='Text to overlay on video'
-    )
-
-    parser.add_argument(
-        '-font', '--fontfile',
-        help='Path to .ttf or .otf font file'
-    )
-
-    parser.add_argument(
-        '-topleft',
-        action='store_true',
-        help='Position text at top left'
-    )
-
-    parser.add_argument(
-        '-topright',
-        action='store_true',
-        help='Position text at top right'
-    )
-
-    parser.add_argument(
-        '-bottomleft',
-        action='store_true',
-        help='Position text at bottom left'
-    )
-
-    parser.add_argument(
-        '-bottomright',
-        action='store_true',
-        help='Position text at bottom right'
-    )
-
-    parser.add_argument(
-        '-left',
-        type=int,
-        default=25,
-        help='Left margin in pixels'
-    )
-
-    parser.add_argument(
-        '-right',
-        type=int,
-        default=25,
-        help='Right margin in pixels'
-    )
-
-    parser.add_argument(
-        '-top',
-        type=int,
-        default=25,
-        help='Top margin in pixels'
-    )
-
-    parser.add_argument(
-        '-bottom',
-        type=int,
-        default=25,
-        help='Bottom margin in pixels'
-    )
-
-    parser.add_argument(
-        '-fontsize',
-        type=int,
-        default=24,
-        help='Font size'
-    )
-
-    parser.add_argument(
-        '-fontcolor',
-        default='white',
-        help='Font color'
-    )
-
-    parser.add_argument(
-        '-bgcolor',
-        help='Background color (example: black@0.5)'
+        "-q", "--quality",
+        choices=["360", "720", "1080"],
+        help="Output resolution"
     )
 
     args = parser.parse_args()
 
+    ffmpeg_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "bin",
+        "ffmpeg.exe"
+    )
+
+    if not os.path.exists(ffmpeg_path):
+        print("[ERROR] FFmpeg not found:")
+        print(ffmpeg_path)
+        sys.exit(1)
+
     if not os.path.exists(args.video):
-        print(f"[ERROR] Video not found: {args.video}")
+        print("[ERROR] Video not found")
         sys.exit(1)
 
     if not os.path.exists(args.subtitle):
-        print(f"[ERROR] Subtitle not found: {args.subtitle}")
+        print("[ERROR] Subtitle not found")
         sys.exit(1)
 
-    if args.fontfile and not os.path.exists(args.fontfile):
-        print(f"[ERROR] Font not found: {args.fontfile}")
-        sys.exit(1)
+    if args.quality == "360":
+        vf_filter += ",scale=-2:360"
+
+    elif args.quality == "720":
+        vf_filter += ",scale=-2:720"
+
+    elif args.quality == "1080":
+        vf_filter += ",scale=-2:1080"
 
     filters = []
 
-    subtitle_path = args.subtitle.replace("\\", "/")
-    filters.append(f"subtitles='{subtitle_path}'")
+    subtitle_path = os.path.abspath(args.subtitle)
+    subtitle_path = subtitle_path.replace("\\", "/")
+    subtitle_path = subtitle_path.replace(":", "\\:")
+
+    filters.append(
+        f"subtitles='{subtitle_path}'"
+    )
 
     if args.text:
 
-        if args.topleft:
-            x = str(args.left)
-            y = str(args.top)
-
-        elif args.topright:
+        if args.topright:
             x = f"w-tw-{args.right}"
             y = str(args.top)
 
@@ -147,54 +93,65 @@ def main():
             x = str(args.left)
             y = str(args.top)
 
-        drawtext_parts = []
+        font_path = os.path.abspath(args.fontfile)
+        font_path = font_path.replace("\\", "/")
+        font_path = font_path.replace(":", "\\:")
 
-        if args.fontfile:
-            font_path = args.fontfile.replace("\\", "/")
-            drawtext_parts.append(f"fontfile='{font_path}'")
+        text = args.text
+        text = text.replace("\\", "\\\\")
+        text = text.replace(":", "\\:")
+        text = text.replace("'", "\\'")
 
-        drawtext_parts.extend([
-            f"text='{args.text}'",
-            f"fontsize={args.fontsize}",
-            f"fontcolor={args.fontcolor}",
-            f"x={x}",
+        drawtext = (
+            f"drawtext="
+            f"fontfile='{font_path}':"
+            f"text='{text}':"
+            f"fontsize={args.fontsize}:"
+            f"fontcolor={args.fontcolor}:"
+            f"x={x}:"
             f"y={y}"
-        ])
+        )
 
         if args.bgcolor:
-            drawtext_parts.extend([
-                "box=1",
-                f"boxcolor={args.bgcolor}",
-                "boxborderw=5"
-            ])
+            drawtext += (
+                f":box=1"
+                f":boxcolor={args.bgcolor}"
+                f":boxborderw=5"
+            )
 
-        drawtext = "drawtext=" + ":".join(drawtext_parts)
         filters.append(drawtext)
 
     vf_filter = ",".join(filters)
 
-    print(f"[INFO] Using filter:")
-    print(vf_filter)
+    cmd = [
+        ffmpeg_path,
+        "-i", args.video,
+        "-vf", vf_filter,
+        "-c:v", "libx265",
+        "-preset", "veryslow",
+        "-crf", "30",
+        "-c:a", "aac",
+        "-b:a", "64k",
+        "-movflags", "+faststart",
+        "-y",
+        args.output
+    ]
+
+    print()
+    print("[INFO] FFmpeg Command:")
+    print(" ".join(cmd))
+    print()
 
     try:
-        (
-            ffmpeg
-            .input(args.video)
-            .output(
-                args.output,
-                vf=vf_filter
-            )
-            .run(overwrite_output=True)
-        )
+        subprocess.run(cmd, check=True)
 
-        print(f"[SUCCESS] Output saved to: {args.output}")
+        print()
+        print("[SUCCESS]")
+        print(args.output)
 
-    except ffmpeg.Error as e:
-        print("[FFMPEG ERROR]")
-
-        if e.stderr:
-            print(e.stderr.decode())
-
+    except subprocess.CalledProcessError:
+        print()
+        print("[ERROR] FFmpeg failed")
         sys.exit(1)
 
 if __name__ == "__main__":
